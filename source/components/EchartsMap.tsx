@@ -23,10 +23,6 @@ interface MapProps {
   chartOnClickCallBack?: Function;
   chartGeoRoamCallBack?: Function;
 }
-// This is a workaround to
-function findMatchPlaces(places: string[], tested: string) {
-  return places.find(p => p.includes(tested));
-}
 
 @observer
 @component({
@@ -53,7 +49,7 @@ export class EchartsMap extends mixin<MapProps, {}>() {
   @attribute
   @watch
   public chartOnClickCallBack = (param, chart) => {
-    console.log(param, chart);
+    console.log('click', param, chart);
   };
 
   @attribute
@@ -81,11 +77,12 @@ export class EchartsMap extends mixin<MapProps, {}>() {
 
   public adjustOption(scale: number = 1): void {
     const options = this.props.chartOptions;
+    console.log(options);
     if (this.chart && options) {
       const domWidth = this.chart.getWidth();
       const domHeight = this.chart.getHeight();
 
-      options.series[0].zoom *= scale;
+      options.series.forEach(s => (s.zoom *= scale));
       const size = options.series[0].zoom * Math.min(domWidth, domHeight);
       if (this.props.isForceRatio) {
         const maxWidth = Math.min(
@@ -112,9 +109,9 @@ export class EchartsMap extends mixin<MapProps, {}>() {
       }
       if (this.props.isAdjustLabel && scale) {
         if (size < 200) {
-          options.series[0].label.show = false;
+          options.series.forEach(s => (s.label.show = false));
         } else {
-          options.series[0].label.show = true;
+          options.series.forEach(s => (s.label.show = true));
         }
       }
       this.chart.setOption(options);
@@ -134,6 +131,7 @@ export class EchartsMap extends mixin<MapProps, {}>() {
     fetch(mapUrl)
       .then(response => response.json())
       .then(data => {
+        console.log(chartOptions);
         // convert to short names, better to use a map already with short names
         data.features.forEach(
           (f: { properties: { name: string } }) =>
@@ -142,23 +140,40 @@ export class EchartsMap extends mixin<MapProps, {}>() {
         echarts.registerMap('map', data);
         this.chart = echarts.init(document.getElementById(this.chartId));
         this.chart.setOption(chartOptions);
-        this.chart.on('click', function(params) {
-          chartOnClickCallBack(params, this.chart);
+
+        // implement hover-then-click on mobile devices
+        let eventState = {
+          hovered: ''
+        };
+        this.chart.on('mouseover', params => {
+          // prevent click event to trigger immediately
+          setTimeout(() => (eventState.hovered = params.name), 0);
         });
-        this.chart.on('georoam', function(params) {
-          if (
-            this.chart !== undefined &&
-            params.dy === undefined &&
-            params.dx === undefined
-          ) {
-            chartGeoRoamCallBack(params, this.chart);
+        this.chart.on('mouseout', () => {
+          eventState.hovered = '';
+        });
+        this.chart.on('click', params => {
+          if (eventState.hovered.length > 0) {
+            chartOnClickCallBack(params, this.chart);
+            eventState.hovered = '';
           }
+          params.event.stop();
         });
+
+        // this.chart.on('georoam', function(params) {
+        //   if (
+        //     this.chart !== undefined &&
+        //     params.dy === undefined &&
+        //     params.dx === undefined
+        //   ) {
+        //     chartGeoRoamCallBack(params, this.chart);
+        //   }
+        // });
         window.onresize = () => {
           this.chart.resize();
-          this.adjustOption();
+          // this.adjustOption();
         };
-        this.adjustOption();
+        // this.adjustOption();
         this.chart.hideLoading();
       })
       .catch(e => console.log('获取地图失败', e));

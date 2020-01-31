@@ -2,7 +2,8 @@ import {
   CountryData,
   ProvinceData,
   CityData,
-  PatientStatData
+  PatientStatData,
+  Series
 } from './patientStatInterface';
 import long2short from './long2short'; // some city names are NOT short names so we also convert them here
 
@@ -39,7 +40,8 @@ function convertProvince(source): ProvinceData {
   if (source.cities && source.cities.length > 0) {
     source.cities.forEach(
       (c: { cityName: string }) =>
-        (cities[long2short(c.cityName)] = convertCity(c))
+        // 把省级的更新时间传入市级由于市级没有各自的数据更新时间
+        (cities[long2short(c.cityName)] = convertCity(c, source.updateTime))
     );
   }
   return {
@@ -50,8 +52,52 @@ function convertProvince(source): ProvinceData {
   };
 }
 
-function convertCity(source): CityData {
-  return { name: long2short(source.cityName), ...convertStat(source) };
+function convertCity(source, updateTime): CityData {
+  return {
+    name: long2short(source.cityName),
+    timestamp: updateTime, // 使用传入的省级数据更新时间
+    ...convertStat(source)
+  };
 }
 
-export { convertCountry, convertProvince, convertCity };
+function roundTime(t: number, resolution: number) {
+  return Math.floor(t / resolution) * resolution;
+}
+
+function convertProvincesSeries(
+  source,
+  resolution: number // in ms
+): Series<ProvinceData> {
+  let res: Series<ProvinceData> = {};
+  source.forEach(item => {
+    const t = roundTime(item.updateTime, resolution);
+    if (res[t] === undefined) {
+      res[t] = {};
+    }
+    const prov = convertProvince(item);
+    res[t][prov.name] = prov;
+  });
+  return res;
+}
+
+function extractCitiesSeries(
+  series: Series<ProvinceData>,
+  name: string,
+  resolution: number
+): Series<CityData> {
+  let res: Series<CityData> = {};
+  Object.values(series).forEach(provs => {
+    if (provs[name] !== undefined) {
+      res[roundTime(provs[name].timestamp, resolution)] = provs[name].cities;
+    }
+  });
+  return res;
+}
+
+export {
+  convertCountry,
+  convertProvince,
+  convertCity,
+  convertProvincesSeries,
+  extractCitiesSeries
+};
